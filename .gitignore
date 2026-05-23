@@ -1,0 +1,33 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# ---- Virtual environment ----
+.venv/
+venv/
+env/
+
+# ---- Data cache (don't commit fetched market data) ----
+.cache/
+*.parquet
+
+# ---- Model artifacts (too large / regenerable) ----
+output/*.pkl
+output/*.csv
+# Keep example reports so recruiters can see output:
+!output/backtest_report.md
+!output/feature_ic_report.md
+
+# ---- Backups ----
+_v1_backup_*/
+
+# ---- OS / editor junk ----
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# ---- Logs ----
+*.log

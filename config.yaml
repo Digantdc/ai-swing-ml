@@ -1,0 +1,183 @@
+# AI Swing ML — Configuration
+# Edit these to tune the strategy without touching code.
+
+# ----------------------------------------------------------------------------
+# Universe: which stocks to predict on
+# ----------------------------------------------------------------------------
+universe:
+  # The 60-name AI ecosystem universe (mirrors data/universe.py defaults).
+  # Set use_default: true to use the built-in list, or provide custom_tickers.
+  use_default: true
+  custom_tickers: []
+  # Macro benchmark + sector ETFs (used for relative-strength features)
+  benchmark: SPY
+  sector_etfs: [SMH, SOXX, IGV, BOTZ]
+  # VIX and rates
+  macro_tickers: [^VIX, ^TNX, ^FVX, DX-Y.NYB]
+
+# ----------------------------------------------------------------------------
+# Target variable
+# ----------------------------------------------------------------------------
+target:
+  # Number of trading days ahead for the forward-return target.
+  horizon_days: 21
+  # For ranking: target = is_stock_in_top_X_percentile by horizon_days return?
+  # 0.20 = top quintile; 0.10 = top decile (more aggressive, fewer winners)
+  top_pct: 0.20
+  # For binary direction: stock is "up" if forward return > min_up_return
+  min_up_return: 0.05
+
+# ----------------------------------------------------------------------------
+# Feature engineering
+# ----------------------------------------------------------------------------
+features:
+  # Lookback windows (trading days) for return / vol / rolling features
+  return_windows: [1, 5, 10, 20, 60, 120]
+  vol_windows: [5, 21, 60]
+  # Z-score normalization window (rolling)
+  zscore_window: 252
+  # Fundamentals refresh: how often (calendar days) to re-pull yfinance .info
+  fundamentals_refresh_days: 7
+
+# ----------------------------------------------------------------------------
+# Model: LightGBM LambdaRank for cross-sectional ranking
+# ----------------------------------------------------------------------------
+model:
+  type: lightgbm_ranker
+  lightgbm:
+    objective: lambdarank
+    metric: ndcg
+    ndcg_eval_at: [3, 5, 10]
+    learning_rate: 0.05
+    num_leaves: 31
+    min_data_in_leaf: 50
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    bagging_freq: 5
+    lambda_l1: 0.1
+    lambda_l2: 0.1
+    num_boost_round: 500
+    early_stopping_rounds: 50
+    verbose: -1
+  # Random seed for reproducibility
+  random_state: 42
+
+# Volatility forecasting model
+volatility_model:
+  type: random_forest_regressor
+  rf:
+    n_estimators: 200
+    max_depth: 8
+    min_samples_leaf: 20
+    random_state: 42
+  # Target: 21-day realized volatility (annualized)
+  horizon_days: 21
+
+# ----------------------------------------------------------------------------
+# Walk-forward backtest
+# ----------------------------------------------------------------------------
+backtest:
+  # Total years of history to fetch (excludes warm-up)
+  total_years: 5
+  # Initial training window (months) before first prediction
+  initial_train_months: 24
+  # Step forward and retrain every N months
+  retrain_freq_months: 1
+  # Validation set size (months) used inside each train window for early stopping
+  validation_months: 3
+  # Portfolio construction: take top-N picks each rebalance
+  top_n_picks: 5
+  # Equal-weighted or rank-weighted within top-N?
+  weighting: equal
+  # Rebalance frequency in trading days (match target horizon for cleanest test)
+  rebalance_days: 21
+  # Transaction cost (one way, per leg) — applied at buy AND sell
+  cost_per_leg: 0.0015   # 15 bps (IBKR realistic for most names)
+  # Slippage (one way, per leg) — additional execution friction
+  slippage: 0.0010       # 10 bps
+  # Cash return (annualized) for non-invested capital
+  cash_return_annual: 0.045
+  # Minimum signal score to take a trade (filters low-conviction)
+  min_signal_pct: 0.10   # only take picks with predicted top-10% rank prob
+
+# ----------------------------------------------------------------------------
+# Options overlay backtest
+# ----------------------------------------------------------------------------
+options:
+  enabled: true
+  # Days-to-expiry to assume when constructing spreads
+  expiry_dte: 30
+  # IV proxy: use realized vol * scaling factor (since options data is coarse)
+  iv_to_rv_ratio: 1.20   # IV typically trades ~20% rich vs RV historically
+  # Strategy mapping rules (see models/strategy_selector.py for full logic)
+  strategies:
+    bull_call_spread:
+      enabled: true
+      delta_long_target: 0.50   # ATM
+      delta_short_target: 0.30  # ~7-10% OTM
+    bull_put_credit_spread:
+      enabled: true
+      delta_short_target: 0.30
+      delta_long_target: 0.15
+    long_call:
+      enabled: true
+      delta_target: 0.55
+    iron_condor:
+      enabled: true
+      delta_short_call: 0.25
+      delta_short_put: 0.25
+  # Risk per options trade (% of portfolio capital)
+  risk_per_trade: 0.02     # 2% max loss per options position
+  # Premium discount for early exit (50% of max profit rule)
+  early_exit_pct: 0.60
+
+# ----------------------------------------------------------------------------
+# Regime detector (rule-based macro classifier)
+# ----------------------------------------------------------------------------
+regime:
+  enabled: true
+  # VIX thresholds for pillar counting
+  vix_calm: 15.0       # VIX < this = +1 risk-on pillar
+  vix_elevated: 22.0   # advisory threshold
+  vix_panic: 30.0      # VIX > this = +1 risk-off pillar
+  # SPY trend windows
+  spy_trend_window: 200       # days for SMA
+  spy_slope_window: 21        # days for slope calc
+  spy_recent_return_window: 21  # days for momentum confirmation
+
+# ----------------------------------------------------------------------------
+# Position sizer (Kelly with caps + regime scaling)
+# ----------------------------------------------------------------------------
+sizer:
+  enabled: true
+  kelly_fraction: 0.25         # quarter-Kelly safety factor
+  max_position_pct: 0.20       # cap any single name at 20% of portfolio
+  base_gross_exposure: 1.0     # 100% gross at full risk-on regime
+  min_gross_exposure: 0.25     # floor at 25% even in deep risk-off
+  edge_floor: 0.0              # negative-edge positions dropped
+  vol_floor: 0.10              # min annual vol input (avoid div-near-zero)
+  vol_ceiling: 2.00            # max annual vol input (cap spikes)
+  # Default edges if no backtest calibration available
+  default_top_edge: 0.04       # top-percentile picks ~ +4% expected 21d return
+  default_bottom_edge: -0.02   # bottom-percentile picks ~ -2%
+
+# ----------------------------------------------------------------------------
+# Output paths
+# ----------------------------------------------------------------------------
+output:
+  data_cache_dir: ./.cache
+  model_dir: ./output
+  report_dir: ./output
+  log_level: INFO
+
+# ----------------------------------------------------------------------------
+# Honest limits — knobs to tune the realism of the backtest
+# ----------------------------------------------------------------------------
+realism:
+  # Survivorship bias adjustment: include simulated "ghost" delistings?
+  # (Not implemented yet — placeholder for v2)
+  apply_survivorship_adjustment: false
+  # Live trading drag: extra cost applied on top of cost+slippage
+  live_drag: 0.0005   # 5 bps extra to be conservative
+  # Liquidity filter: skip picks with avg dollar volume below this (in millions)
+  min_avg_dollar_volume_mn: 50
