@@ -20,9 +20,9 @@ positive would.
 
 ---
 
-## Why a hiring manager might care
+## What this project demonstrates
 
-This project shows I can:
+Built end-to-end, this project shows I can:
 
 - **Build a complete, modular quant pipeline** from data to signal to backtest to
   portfolio — not a notebook, a structured codebase with tests.
